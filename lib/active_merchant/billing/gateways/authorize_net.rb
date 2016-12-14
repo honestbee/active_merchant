@@ -8,7 +8,7 @@ module ActiveMerchant
       self.test_url = 'https://apitest.authorize.net/xml/v1/request.api'
       self.live_url = 'https://api2.authorize.net/xml/v1/request.api'
 
-      self.supported_countries = %w(AD AT AU BE BG CA CH CY CZ DE DK EE ES FI FR GB GB GI GR HU IE IL IS IT LI LT LU LV MC MT NL NO PL PT RO SE SI SK SM TR US VA)
+      self.supported_countries = %w(AD AT AU BE BG CA CH CY CZ DE DK EE ES FI FR GB GI GR HU IE IL IS IT LI LT LU LV MC MT NL NO PL PT RO SE SI SK SM TR US VA)
       self.default_currency = 'USD'
       self.money_format = :dollars
       self.supported_cardtypes = [:visa, :master, :american_express, :discover, :diners_club, :jcb, :maestro]
@@ -345,6 +345,10 @@ module ActiveMerchant
         end
       end
 
+      def camel_case_lower(key)
+        String(key).split('_').inject([]){ |buffer,e| buffer.push(buffer.empty? ? e : e.capitalize) }.join
+      end
+
       def add_settings(xml, source, options)
         xml.transactionSettings do
           if options[:recurring]
@@ -364,6 +368,18 @@ module ActiveMerchant
           elsif self.class.duplicate_window
             ActiveMerchant.deprecated "Using the duplicate_window class_attribute is deprecated. Use the transaction options hash instead."
             set_duplicate_window(xml, self.class.duplicate_window)
+          end
+          if options[:email_customer]
+            xml.setting do
+              xml.settingName("emailCustomer")
+              xml.settingValue("true")
+            end
+          end
+          if options[:header_email_receipt]
+            xml.setting do
+              xml.settingName("headerEmailReceipt")
+              xml.settingValue(options[:header_email_receipt])
+            end
           end
         end
       end
@@ -544,6 +560,19 @@ module ActiveMerchant
           xml.invoiceNumber(truncate(options[:order_id], 20))
           xml.description(truncate(options[:description], 255))
         end
+
+        # Authorize.net API requires lineItems to be placed directly after order tag
+        if options[:line_items]
+          xml.lineItems do
+            options[:line_items].each do |line_item|
+              xml.lineItem do
+                line_item.each do |key, value|
+                  xml.send(camel_case_lower(key), value)
+                end
+              end
+            end
+          end
+        end
       end
 
       def create_customer_payment_profile(credit_card, options)
@@ -584,7 +613,6 @@ module ActiveMerchant
           end
         end
       end
-
 
       def names_from(payment_source, address, options)
         if payment_source && !payment_source.is_a?(PaymentToken) && !payment_source.is_a?(String)
